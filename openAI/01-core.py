@@ -5,15 +5,10 @@ from enum import Enum
 from typing import List, Optional
 import requests
 import json
+import base64
+import time
 
 client = OpenAI()
-
-
-
-
-# exit(0)  # Exit the script after structured output example to avoid confusion with the next examples
-
-
 
 
 
@@ -39,7 +34,7 @@ print(response.output_text)
 # It supports multi-turn conversations. This is like having a dialogue with the model.
 # IMPORTANT: 
 # In the chat API, every request needs the full conversation history passed in the messages array. 
-# Each time you call the API, the model doesn’t remember anything. You have to remind it of the full conversation. 
+# Each time you call the API, the model doesn't remember anything. You have to remind it of the full conversation. 
 # This gives the model memory (within the request). So you build up a list like this:
 response = client.chat.completions.create(
     model="gpt-4",
@@ -149,7 +144,7 @@ print(response.output_text)
 # Key Benefits Of Markdown Over Plain Text:
 # ---------------------------------------------------------------------------
 # Feature                   |       Plain String        |       Markdown
-# Emphasis (bold/italics)	|             ❌	             |          ✅
+# Emphasis (bold/italics)	|           ❌	             |        ✅
 # Code blocks               |           ❌              |          ✅
 # Lists / Tables            |           ❌              |          ✅
 # Easier reading            |           ❌              |          ✅
@@ -1022,3 +1017,144 @@ response = client.responses.create(
     ]
 )
 print(response.output_text)
+
+
+
+
+
+
+# ==================================================================
+# ======== Streaming API Response ==================================
+# ==================================================================
+stream = openai.responses.create(
+    model="gpt-4.1",
+    input=[
+        {
+            "role":"user",
+            "content": "Say 'double bubble bath' ten times fast."
+        }
+    ],
+    stream = True
+)
+for event in stream:
+    print(event)
+# Common events to listen for when streaming text are:
+# - `response.created`
+# - `response.output_text.delta`
+# - `response.completed`
+# - `error`
+
+
+
+
+
+
+# ======================================================================
+# ================ File Inputs =========================================
+# ======================================================================
+# OpenAI models with vision capabilities can also accept PDF files as input. 
+# Provide PDFs either as Base64-encoded data or as file IDs obtained after uploading files to 
+# the /v1/files endpoint through the API or dashboard.
+file = client.files.create(
+    file=open("file-sample_150kB.pdf", "rb"),
+    purpose="user_data"
+)
+response = client.responses.create(
+    model="gpt-4.1",
+    input=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_file",
+                    "file_id": file.id
+                },
+                {
+                    "type": "input_text",
+                    "text": "What is in this image?"
+                }
+            ]
+        }
+    ]
+)
+print(response.output_text)
+
+
+# ------- Sending PDF as Base64 string -------
+with open("file-sample_150kB.pdf", "rb") as file:
+    data = file.read()
+base64_string = base64.b64encode(data).decode('utf-8')
+
+response = client.responses.create(
+    model="gpt-4.1",
+    input=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_file",
+                    "filename": "file-sample_150kB.pdf",
+                    "file_data": f"data:application/pdf;base64,{base64_string}"
+                },
+                {
+                    "type": "input_text",
+                    "text": "What is in this image?"
+                }
+            ]
+        }
+    ]
+)
+print(response.output_text)
+
+
+
+
+
+
+# ===============================================
+# ==============  Background Mode ===============
+# ===============================================
+
+# Background mode is a feature that allows you to send a background file to the model and get responses based on those files.
+# This is useful for tasks like image classification, object detection, or generating captions for images.
+# To use background mode, you need to provide the file as part of the input.
+# Here's an example of how to use background mode with the OpenAI API:
+response = client.responses.create(
+    model="gpt-4.1",
+    input="Write a very long nodel about otters in space",
+    background=True,
+)
+while response.status in {"queued", "in_progress"}:
+    print(f"Current status: {response.status}")
+    time.sleep(2)
+    response = client.responses.retrieve(response.id)
+
+print(f"Final response: {response.output_text}")
+
+# ------- Cancel a response -------
+# response = client.responses.cancel(response.id)
+# print(f"Response cancelled: {response.status}")
+
+
+
+# -------- Background Mode with stream -------
+# Fire off an async response but also start streaming immediately
+stream = client.responses.create(
+    model="o3",
+    input="Write a novel about otters in space.",
+    background=True,
+    stream=True,
+)
+
+cursor = None
+for event in stream:
+    print(event)
+    cursor = event.sequence_number
+    # If your connection drops, the response continues running and you can reconnect:
+    # SDK support for resuming the stream is coming soon.
+    # for event in client.responses.stream(resp.id, starting_after=cursor):
+    #     print(event)
+
+# Background sampling requires store=true; stateless requests are rejected.
+# To cancel a synchronous response, terminate the connection
+# You can only start a new stream from a background response if you created it with stream=true.
